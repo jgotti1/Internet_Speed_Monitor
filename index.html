@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Monitor your current device's internet download speed over time." />
+    <title>Signal Watch — Internet Speed Monitor</title>
+    <link rel="preconnect" href="https://speed.cloudflare.com" crossorigin />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+
+    <main class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Signal Watch home">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>Signal Watch</span>
+        </a>
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch to light mode">
+          <span class="sun" aria-hidden="true">☀</span>
+          <span class="toggle-track"><span class="toggle-knob"></span></span>
+          <span class="moon" aria-hidden="true">☾</span>
+        </button>
+      </header>
+
+      <section class="hero">
+        <p class="eyebrow">Live network monitor</p>
+        <h1>Know your connection.<br /><em>Every minute.</em></h1>
+        <p class="lede">A private, browser-based download speed monitor for the device in your hands.</p>
+      </section>
+
+      <section class="stats-grid" aria-label="Test statistics">
+        <article class="stat-card alert-stat">
+          <div class="stat-icon">!</div>
+          <div><span>Offline events</span><strong id="offlineCount">0</strong></div>
+        </article>
+        <article class="stat-card">
+          <div class="stat-icon">↓</div>
+          <div><span>Lowest speed</span><strong><b id="lowestSpeed">—</b> <small>Mbps</small></strong></div>
+        </article>
+        <article class="stat-card">
+          <div class="stat-icon">≈</div>
+          <div><span>Average speed</span><strong><b id="averageSpeed">—</b> <small>Mbps</small></strong></div>
+        </article>
+        <article class="stat-card">
+          <div class="stat-icon">↑</div>
+          <div><span>Highest speed</span><strong><b id="highestSpeed">—</b> <small>Mbps</small></strong></div>
+        </article>
+      </section>
+
+      <section class="speed-panel" aria-live="polite">
+        <div class="status-line"><span class="status-dot" id="statusDot"></span><span id="statusText">Ready to monitor</span></div>
+        <div class="speed-reading">
+          <span id="currentSpeed">—</span>
+          <div><strong>Mbps</strong><small>download</small></div>
+        </div>
+        <p id="lastChecked">Start monitoring to run your first test</p>
+        <div class="meter" aria-hidden="true"><span id="meterFill"></span></div>
+        <p class="testing-message" id="testingMessage" hidden>Measuring your connection…</p>
+      </section>
+
+      <section class="controls-panel">
+        <div class="interval-control">
+          <label for="intervalValue">Check every</label>
+          <div class="input-group">
+            <input id="intervalValue" type="number" min="1" max="1440" step="1" value="2" inputmode="numeric" />
+            <select id="intervalUnit" aria-label="Interval unit">
+              <option value="minutes" selected>minutes</option>
+              <option value="seconds">seconds</option>
+            </select>
+          </div>
+          <small>Changes apply to the next scheduled check.</small>
+        </div>
+        <div class="action-buttons">
+          <button class="button button-primary" id="startButton" type="button"><span>▶</span> Start test</button>
+          <button class="button button-danger" id="endButton" type="button" disabled><span>■</span> End test</button>
+        </div>
+      </section>
+
+      <section class="history-section">
+        <div class="section-heading">
+          <div><p class="eyebrow">Session history</p><h2>Recent checks</h2></div>
+          <span id="checkCount">0 checks</span>
+        </div>
+        <div class="history-empty" id="historyEmpty">Your speed checks will appear here once monitoring begins.</div>
+        <div class="history-list" id="historyList"></div>
+      </section>
+
+      <footer><span>Measurements run on this device</span><span>•</span><span>No results are uploaded or stored</span></footer>
+    </main>
+  </body>
+</html>
