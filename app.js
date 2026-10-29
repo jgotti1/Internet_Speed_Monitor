@@ -1,12 +1,14 @@
 const TEST_URL = "https://speed.cloudflare.com/__down";
 const TEST_BYTES = 10_000_000;
 const TEST_TIMEOUT_MS = 30_000;
+const SESSION_STORAGE_KEY = "signal-watch-session-v1";
 
 const elements = {
   themeToggle: document.querySelector("#themeToggle"),
   intervalValue: document.querySelector("#intervalValue"),
   intervalUnit: document.querySelector("#intervalUnit"),
   startButton: document.querySelector("#startButton"),
+  freshButton: document.querySelector("#freshButton"),
   endButton: document.querySelector("#endButton"),
   statusDot: document.querySelector("#statusDot"),
   statusText: document.querySelector("#statusText"),
@@ -14,13 +16,18 @@ const elements = {
   lastChecked: document.querySelector("#lastChecked"),
   meterFill: document.querySelector("#meterFill"),
   testingMessage: document.querySelector("#testingMessage"),
+  testCount: document.querySelector("#testCount"),
   offlineCount: document.querySelector("#offlineCount"),
   lowestSpeed: document.querySelector("#lowestSpeed"),
   averageSpeed: document.querySelector("#averageSpeed"),
   highestSpeed: document.querySelector("#highestSpeed"),
   checkCount: document.querySelector("#checkCount"),
   historyEmpty: document.querySelector("#historyEmpty"),
-  historyList: document.querySelector("#historyList")
+  historyList: document.querySelector("#historyList"),
+  sessionDialog: document.querySelector("#sessionDialog"),
+  sessionDialogSummary: document.querySelector("#sessionDialogSummary"),
+  continueButton: document.querySelector("#continueButton"),
+  newSessionButton: document.querySelector("#newSessionButton")
 };
 
 let monitoring = false;
@@ -29,6 +36,72 @@ let timerId = null;
 let activeController = null;
 let offlineEvents = 0;
 let results = [];
+
+function saveSession() {
+  const session = {
+    monitoring,
+    offlineEvents,
+    intervalValue: elements.intervalValue.value,
+    intervalUnit: elements.intervalUnit.value,
+    results: results.map(result => ({ speed: result.speed, date: result.date.toISOString() }))
+  };
+  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+}
+
+function getSavedSession() {
+  try {
+    const session = JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY));
+    if (!session || !Array.isArray(session.results)) return null;
+    return session;
+  } catch {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    return null;
+  }
+}
+
+function restoreSession(session) {
+  offlineEvents = Number.isFinite(session.offlineEvents) ? session.offlineEvents : 0;
+  results = session.results
+    .filter(result => Number.isFinite(result.speed) && !Number.isNaN(Date.parse(result.date)))
+    .map(result => ({ speed: result.speed, date: new Date(result.date) }));
+  elements.intervalValue.value = session.intervalValue || "2";
+  elements.intervalUnit.value = session.intervalUnit === "seconds" ? "seconds" : "minutes";
+  elements.historyList.replaceChildren();
+  elements.historyEmpty.hidden = results.length > 0;
+  results.forEach(addHistory);
+  updateStatistics();
+
+  const latest = results.at(-1);
+  if (latest) {
+    elements.currentSpeed.textContent = formatSpeed(latest.speed);
+    elements.meterFill.style.width = `${Math.min(100, Math.max(1, latest.speed / 5))}%`;
+    elements.lastChecked.textContent = `Last checked ${latest.date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}`;
+  }
+}
+
+function clearSession() {
+  monitoring = false;
+  testing = false;
+  clearTimeout(timerId);
+  activeController?.abort();
+  activeController = null;
+  offlineEvents = 0;
+  results = [];
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+  elements.historyList.replaceChildren();
+  elements.historyEmpty.hidden = false;
+  elements.currentSpeed.textContent = "—";
+  elements.lowestSpeed.textContent = "—";
+  elements.averageSpeed.textContent = "—";
+  elements.highestSpeed.textContent = "—";
+  elements.meterFill.style.width = "0";
+  elements.lastChecked.textContent = "Start monitoring to run your first test";
+  elements.testingMessage.hidden = true;
+  elements.startButton.disabled = false;
+  elements.endButton.disabled = true;
+  setStatus("Ready to monitor");
+  updateStatistics();
+}
 
 function loadTheme() {
   const saved = localStorage.getItem("signal-watch-theme");
@@ -61,6 +134,7 @@ function formatSpeed(value) {
 }
 
 function updateStatistics() {
+  elements.testCount.textContent = String(results.length);
   elements.offlineCount.textContent = String(offlineEvents);
   elements.checkCount.textContent = `${results.length} ${results.length === 1 ? "check" : "checks"}`;
   if (!results.length) return;
@@ -88,6 +162,7 @@ function recordOffline(message = "Connection unavailable") {
   updateStatistics();
   setStatus(message, "offline");
   elements.lastChecked.textContent = `Failed check at ${new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}`;
+  saveSession();
 }
 
 async function measureDownloadSpeed() {
@@ -145,6 +220,7 @@ async function runCheck() {
     setStatus("Monitoring active", "active");
     addHistory(result);
     updateStatistics();
+    saveSession();
   } catch (error) {
     if (monitoring && error.name !== "AbortError") recordOffline("Speed check failed");
   } finally {
@@ -164,6 +240,7 @@ function startMonitoring() {
   monitoring = true;
   elements.startButton.disabled = true;
   elements.endButton.disabled = false;
+  saveSession();
   runCheck();
 }
 
@@ -176,15 +253,38 @@ function stopMonitoring() {
   elements.testingMessage.hidden = true;
   setStatus("Test ended", "idle");
   elements.lastChecked.textContent = results.length ? `Session ended after ${results.length} ${results.length === 1 ? "check" : "checks"}` : "No completed checks";
+  saveSession();
+}
+
+function startFresh() {
+  const hasSession = results.length > 0 || offlineEvents > 0;
+  if (hasSession && !window.confirm("Clear the saved session and start fresh?")) return;
+  clearSession();
+  elements.sessionDialog.hidden = true;
+  startMonitoring();
+}
+
+function initializeSession() {
+  const session = getSavedSession();
+  if (!session || (!session.results.length && !session.offlineEvents)) return;
+  restoreSession(session);
+  const lastCheck = results.at(-1)?.date;
+  elements.sessionDialogSummary.textContent = `${results.length} ${results.length === 1 ? "check" : "checks"} and ${offlineEvents} offline ${offlineEvents === 1 ? "event" : "events"} saved${lastCheck ? `, last updated ${lastCheck.toLocaleString()}` : ""}.`;
+  elements.sessionDialog.hidden = false;
+  elements.continueButton.focus();
 }
 
 elements.themeToggle.addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
 elements.startButton.addEventListener("click", startMonitoring);
+elements.freshButton.addEventListener("click", startFresh);
 elements.endButton.addEventListener("click", stopMonitoring);
-elements.intervalValue.addEventListener("change", () => { if (monitoring && !testing) scheduleNextCheck(); });
-elements.intervalUnit.addEventListener("change", () => { if (monitoring && !testing) scheduleNextCheck(); });
+elements.continueButton.addEventListener("click", () => { elements.sessionDialog.hidden = true; startMonitoring(); });
+elements.newSessionButton.addEventListener("click", () => { clearSession(); elements.sessionDialog.hidden = true; startMonitoring(); });
+elements.intervalValue.addEventListener("change", () => { saveSession(); if (monitoring && !testing) scheduleNextCheck(); });
+elements.intervalUnit.addEventListener("change", () => { saveSession(); if (monitoring && !testing) scheduleNextCheck(); });
 window.addEventListener("offline", () => { if (monitoring) recordOffline("Device went offline"); });
 window.addEventListener("online", () => { if (monitoring) { setStatus("Connection restored", "active"); runCheck(); } });
 
 loadTheme();
 updateStatistics();
+initializeSession();

@@ -33,6 +33,10 @@
       </section>
 
       <section class="stats-grid" aria-label="Test statistics">
+        <article class="stat-card">
+          <div class="stat-icon">#</div>
+          <div><span>Tests run</span><strong id="testCount">0</strong></div>
+        </article>
         <article class="stat-card alert-stat">
           <div class="stat-icon">!</div>
           <div><span>Offline events</span><strong id="offlineCount">0</strong></div>
@@ -76,6 +80,7 @@
         </div>
         <div class="action-buttons">
           <button class="button button-primary" id="startButton" type="button"><span>▶</span> Start test</button>
+          <button class="button button-secondary" id="freshButton" type="button"><span>↻</span> Start fresh</button>
           <button class="button button-danger" id="endButton" type="button" disabled><span>■</span> End test</button>
         </div>
       </section>
@@ -89,7 +94,21 @@
         <div class="history-list" id="historyList"></div>
       </section>
 
-      <footer><span>Measurements run on this device</span><span>•</span><span>No results are uploaded or stored</span></footer>
+      <footer><span>Measurements run on this device</span><span>•</span><span>Results stay in this browser</span></footer>
     </main>
+
+    <div class="session-dialog" id="sessionDialog" hidden>
+      <div class="session-dialog-backdrop"></div>
+      <section class="session-dialog-card" role="dialog" aria-modal="true" aria-labelledby="sessionDialogTitle">
+        <p class="eyebrow">Saved session found</p>
+        <h2 id="sessionDialogTitle">Pick up where you left off?</h2>
+        <p id="sessionDialogSummary">Your previous checks are saved in this browser.</p>
+        <div class="session-dialog-actions">
+          <button class="button button-primary" id="continueButton" type="button">Continue session</button>
+          <button class="button button-secondary" id="newSessionButton" type="button">Start fresh</button>
+        </div>
+        <small>Starting fresh permanently clears the previous session from this browser.</small>
+      </section>
+    </div>
   </body>
 </html>
