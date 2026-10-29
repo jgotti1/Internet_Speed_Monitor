@@ -105,7 +105,7 @@ The block below is machine-readable project info for a portfolio site (invisible
   "title": "Signal Watch",
   "category": "web app",
   "tagline": "A lightweight, browser-based internet download speed monitor.",
-  "description": "Signal Watch runs a speed check immediately when monitoring starts, repeats it on a configurable interval, and keeps session statistics until you end the test. Each check downloads from three test sites in parallel and reports the median, flagging any site that comes in far below it. No account, database, or build step is required.",
+  "description": "Signal Watch runs a speed check immediately when monitoring starts, repeats it on a configurable interval, and keeps session statistics until you end the test. Because it can run all day in the background, it's well suited to pinpointing random or intermittent internet issues, reporting outages and speed dips over the recorded time period rather than just a single snapshot. Each check downloads from three test sites in parallel and reports the median, flagging any site that comes in far below it. No account, database, or build step is required.",
   "liveUrl": "https://speedcheck.margotticode.com",
   "repoUrl": "https://github.com/jgotti1/Internet_Speed_Monitor",
   "thumbnail": "https://raw.githubusercontent.com/jgotti1/Internet_Speed_Monitor/main/docs/preview.jpg",
