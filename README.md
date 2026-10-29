@@ -95,3 +95,30 @@ Changing `TEST_BYTES` changes the approximate data used by each check. Smaller d
 ## Privacy
 
 Signal Watch has no analytics, cookies, account system, or result-storage backend. The selected theme and speed-test session are saved in `localStorage` on the current device. **Start fresh** clears the saved test session.
+
+## Portfolio card
+
+The block below is machine-readable project info for a portfolio site (invisible on GitHub). Keep it in sync when the project, URL or tech changes. To build a card: read this JSON and use `title`, `tagline`/`description`, `thumbnail`, `tech`, and link to `liveUrl` and `repoUrl`.
+
+<!-- portfolio-card:start
+{
+  "title": "Signal Watch",
+  "category": "web app",
+  "tagline": "A lightweight, browser-based internet download speed monitor.",
+  "description": "Signal Watch runs a speed check immediately when monitoring starts, repeats it on a configurable interval, and keeps session statistics until you end the test. Each check downloads from three test sites in parallel and reports the median, flagging any site that comes in far below it. No account, database, or build step is required.",
+  "liveUrl": "https://speedcheck.margotticode.com",
+  "repoUrl": "https://github.com/jgotti1/Internet_Speed_Monitor",
+  "thumbnail": "https://raw.githubusercontent.com/jgotti1/Internet_Speed_Monitor/main/docs/preview.jpg",
+  "tech": ["HTML", "CSS", "JavaScript", "Vercel"],
+  "features": [
+    "Download-speed checks across 3 sites with 4 parallel connections each, reporting the median",
+    "Per-site results saved each check, with below-median sites flagged",
+    "Live countdown to the next check",
+    "Session stats: completed checks, current, lowest, average, and highest speed",
+    "Saved sessions that persist across refreshes via localStorage",
+    "Light and dark themes with a responsive layout"
+  ],
+  "platforms": ["desktop", "tablet", "mobile"],
+  "status": "live"
+}
+portfolio-card:end -->
