@@ -59,9 +59,11 @@
         <div class="status-line"><span class="status-dot" id="statusDot"></span><span id="statusText">Ready to monitor</span></div>
         <div class="speed-reading">
           <span id="currentSpeed">—</span>
-          <div><strong>Mbps</strong><small>download</small></div>
+          <div><strong>Mbps</strong><small>download</small><small id="currentSite"></small></div>
         </div>
+        <div class="site-list" id="siteList" aria-label="Test sites"></div>
         <p id="lastChecked">Start monitoring to run your first test</p>
+        <p id="countdown" class="countdown" hidden></p>
         <div class="meter" aria-hidden="true"><span id="meterFill"></span></div>
         <p class="testing-message" id="testingMessage" hidden>Measuring your connection…</p>
       </section>

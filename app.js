@@ -1,5 +1,12 @@
-const TEST_URL = "https://speed.cloudflare.com/__down";
 const TEST_BYTES = 10_000_000;
+const STREAMS_PER_SITE = 4;
+const STREAM_BYTES = TEST_BYTES / 2;
+const SKEW_RATIO = 0.5;
+const TEST_SITES = [
+  { name: "Cloudflare", url: n => `https://speed.cloudflare.com/__down?bytes=${STREAM_BYTES}&cacheBust=${Date.now()}-${n}` },
+  { name: "CacheFly", url: n => `https://cachefly.cachefly.net/10mb.test?cacheBust=${Date.now()}-${n}` },
+  { name: "Wikimedia", url: n => `https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg?cacheBust=${Date.now()}-${n}` }
+];
 const TEST_TIMEOUT_MS = 30_000;
 const SESSION_STORAGE_KEY = "signal-watch-session-v1";
 
@@ -16,6 +23,9 @@ const elements = {
   lastChecked: document.querySelector("#lastChecked"),
   meterFill: document.querySelector("#meterFill"),
   testingMessage: document.querySelector("#testingMessage"),
+  countdown: document.querySelector("#countdown"),
+  siteList: document.querySelector("#siteList"),
+  currentSite: document.querySelector("#currentSite"),
   testCount: document.querySelector("#testCount"),
   offlineCount: document.querySelector("#offlineCount"),
   lowestSpeed: document.querySelector("#lowestSpeed"),
@@ -33,6 +43,8 @@ const elements = {
 let monitoring = false;
 let testing = false;
 let timerId = null;
+let countdownId = null;
+let nextCheckAt = 0;
 let activeController = null;
 let offlineEvents = 0;
 let results = [];
@@ -43,7 +55,7 @@ function saveSession() {
     offlineEvents,
     intervalValue: elements.intervalValue.value,
     intervalUnit: elements.intervalUnit.value,
-    results: results.map(result => ({ speed: result.speed, date: result.date.toISOString() }))
+    results: results.map(result => ({ speed: result.speed, sites: result.sites, date: result.date.toISOString() }))
   };
   localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
 }
@@ -63,7 +75,7 @@ function restoreSession(session) {
   offlineEvents = Number.isFinite(session.offlineEvents) ? session.offlineEvents : 0;
   results = session.results
     .filter(result => Number.isFinite(result.speed) && !Number.isNaN(Date.parse(result.date)))
-    .map(result => ({ speed: result.speed, date: new Date(result.date) }));
+    .map(result => ({ speed: result.speed, sites: Array.isArray(result.sites) ? result.sites : undefined, date: new Date(result.date) }));
   elements.intervalValue.value = session.intervalValue || "2";
   elements.intervalUnit.value = session.intervalUnit === "seconds" ? "seconds" : "minutes";
   elements.historyList.replaceChildren();
@@ -74,6 +86,8 @@ function restoreSession(session) {
   const latest = results.at(-1);
   if (latest) {
     elements.currentSpeed.textContent = formatSpeed(latest.speed);
+    elements.currentSite.textContent = medianLabel(latest);
+    renderSiteList(latest);
     elements.meterFill.style.width = `${Math.min(100, Math.max(1, latest.speed / 5))}%`;
     elements.lastChecked.textContent = `Last checked ${latest.date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}`;
   }
@@ -83,6 +97,7 @@ function clearSession() {
   monitoring = false;
   testing = false;
   clearTimeout(timerId);
+  stopCountdown();
   activeController?.abort();
   activeController = null;
   offlineEvents = 0;
@@ -97,6 +112,8 @@ function clearSession() {
   elements.meterFill.style.width = "0";
   elements.lastChecked.textContent = "Start monitoring to run your first test";
   elements.testingMessage.hidden = true;
+  elements.currentSite.textContent = "";
+  renderSiteList();
   elements.startButton.disabled = false;
   elements.endButton.disabled = true;
   setStatus("Ready to monitor");
@@ -154,6 +171,17 @@ function addHistory(result) {
     <time datetime="${result.date.toISOString()}">${result.date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}</time>
     <div class="history-bar"><span style="width:${meterWidth}%"></span></div>
     <strong>${formatSpeed(result.speed)} <small>Mbps</small></strong>`;
+  if (result.sites?.length) {
+    const detail = document.createElement("div");
+    detail.className = "history-sites";
+    result.sites.forEach(site => {
+      const item = document.createElement("span");
+      item.textContent = `${site.name} ${site.speed === null ? "failed" : formatSpeed(site.speed)}`;
+      if (site.speed === null || isSkewed(result, site)) item.className = "site-low";
+      detail.append(item);
+    });
+    row.append(detail);
+  }
   elements.historyList.prepend(row);
 }
 
@@ -165,28 +193,34 @@ function recordOffline(message = "Connection unavailable") {
   saveSession();
 }
 
-async function measureDownloadSpeed() {
+async function readStream(site, n, signal) {
+  const response = await fetch(site.url(n), { cache: "no-store", signal });
+  if (!response.ok) throw new Error(`${site.name} returned ${response.status}`);
+  let bytes = 0;
+  if (response.body?.getReader) {
+    const reader = response.body.getReader();
+    while (bytes < STREAM_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+    }
+    reader.cancel().catch(() => {});
+  } else {
+    bytes = (await response.arrayBuffer()).byteLength;
+  }
+  return bytes;
+}
+
+// Downloads from one site over several parallel connections and returns the combined Mbps.
+async function measureSite(site) {
   activeController = new AbortController();
+  const { signal } = activeController;
   const timeoutId = setTimeout(() => activeController.abort(), TEST_TIMEOUT_MS);
   const start = performance.now();
-  let receivedBytes = 0;
 
   try {
-    const url = `${TEST_URL}?bytes=${TEST_BYTES}&cacheBust=${Date.now()}`;
-    const response = await fetch(url, { cache: "no-store", signal: activeController.signal });
-    if (!response.ok) throw new Error(`Test server returned ${response.status}`);
-
-    if (response.body?.getReader) {
-      const reader = response.body.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        receivedBytes += value.byteLength;
-      }
-    } else {
-      receivedBytes = (await response.arrayBuffer()).byteLength;
-    }
-
+    const sizes = await Promise.all(Array.from({ length: STREAMS_PER_SITE }, (_, n) => readStream(site, n, signal)));
+    const receivedBytes = sizes.reduce((sum, size) => sum + size, 0);
     const seconds = (performance.now() - start) / 1000;
     if (!receivedBytes || seconds <= 0) throw new Error("No test data received");
     return (receivedBytes * 8) / seconds / 1_000_000;
@@ -194,6 +228,78 @@ async function measureDownloadSpeed() {
     clearTimeout(timeoutId);
     activeController = null;
   }
+}
+
+function median(values) {
+  const sorted = [...values].sort((x, y) => x - y);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+// Tests each site one after another (so they don't compete for bandwidth) and returns the median plus every site's speed.
+async function measureDownloadSpeed() {
+  const sites = [];
+  for (const [index, site] of TEST_SITES.entries()) {
+    if (!monitoring) return null;
+    renderSiteList(lastResult(), site.name);
+    elements.testingMessage.textContent = `Measuring your connection… (${site.name}, ${index + 1} of ${TEST_SITES.length})`;
+    try {
+      sites.push({ name: site.name, speed: await measureSite(site) });
+    } catch {
+      sites.push({ name: site.name, speed: null });
+    }
+  }
+  const speeds = sites.filter(site => site.speed !== null).map(site => site.speed);
+  if (!speeds.length) throw new Error("All test sites failed");
+  return { speed: median(speeds), sites };
+}
+
+// Shows all test sites under the speed number: last result per site, and which one is being tested right now.
+function lastResult() {
+  return results.at(-1) ?? null;
+}
+
+function renderSiteList(result = null, activeName = null) {
+  elements.siteList.replaceChildren(...TEST_SITES.map(site => {
+    const entry = result?.sites?.find(item => item.name === site.name);
+    const item = document.createElement("span");
+    item.className = "site-chip";
+    if (site.name === activeName) item.classList.add("testing");
+    else if (entry && (entry.speed === null || isSkewed(result, entry))) item.classList.add("site-low");
+    const value = site.name === activeName ? "testing…" : entry ? (entry.speed === null ? "failed" : `${formatSpeed(entry.speed)} Mbps`) : "—";
+    item.textContent = `${site.name} · ${value}`;
+    return item;
+  }));
+}
+
+function medianLabel(result) {
+  const ok = result.sites?.filter(site => site.speed !== null).length;
+  return ok ? `median of ${ok} ${ok === 1 ? "site" : "sites"}` : "";
+}
+
+function isSkewed(result, site) {
+  return site.speed !== null && result.sites.filter(item => item.speed !== null).length > 1 && site.speed < result.speed * SKEW_RATIO;
+}
+
+function startCountdown(ms) {
+  stopCountdown();
+  nextCheckAt = Date.now() + ms;
+  updateCountdown();
+  countdownId = setInterval(updateCountdown, 250);
+}
+
+function stopCountdown() {
+  clearInterval(countdownId);
+  countdownId = null;
+  elements.countdown.hidden = true;
+}
+
+function updateCountdown() {
+  const remaining = Math.max(0, Math.ceil((nextCheckAt - Date.now()) / 1000));
+  const minutes = Math.floor(remaining / 60);
+  const seconds = String(remaining % 60).padStart(2, "0");
+  elements.countdown.textContent = `Next check in ${minutes}:${seconds}`;
+  elements.countdown.hidden = false;
 }
 
 async function runCheck() {
@@ -205,14 +311,18 @@ async function runCheck() {
   }
 
   testing = true;
+  stopCountdown();
   setStatus("Testing connection", "active");
   elements.testingMessage.hidden = false;
   elements.startButton.disabled = true;
 
   try {
-    const speed = await measureDownloadSpeed();
-    if (!monitoring) return;
-    const result = { speed, date: new Date() };
+    const best = await measureDownloadSpeed();
+    if (!monitoring || !best) return;
+    const { speed, sites } = best;
+    const result = { speed, sites, date: new Date() };
+    elements.currentSite.textContent = medianLabel(result);
+    renderSiteList(result);
     results.push(result);
     elements.currentSpeed.textContent = formatSpeed(speed);
     elements.lastChecked.textContent = `Last checked ${result.date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}`;
@@ -226,13 +336,17 @@ async function runCheck() {
   } finally {
     testing = false;
     elements.testingMessage.hidden = true;
+    renderSiteList(lastResult());
     if (monitoring) scheduleNextCheck();
   }
 }
 
 function scheduleNextCheck() {
   clearTimeout(timerId);
-  if (monitoring) timerId = setTimeout(runCheck, getIntervalMs());
+  if (!monitoring) return;
+  const ms = getIntervalMs();
+  timerId = setTimeout(runCheck, ms);
+  startCountdown(ms);
 }
 
 function startMonitoring() {
@@ -247,6 +361,7 @@ function startMonitoring() {
 function stopMonitoring() {
   monitoring = false;
   clearTimeout(timerId);
+  stopCountdown();
   activeController?.abort();
   elements.startButton.disabled = false;
   elements.endButton.disabled = true;
@@ -286,5 +401,6 @@ window.addEventListener("offline", () => { if (monitoring) recordOffline("Device
 window.addEventListener("online", () => { if (monitoring) { setStatus("Connection restored", "active"); runCheck(); } });
 
 loadTheme();
+renderSiteList();
 updateStatistics();
 initializeSession();

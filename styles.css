@@ -79,9 +79,9 @@ h1 em { color: var(--accent); font-weight: 400; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 5px color-mix(in srgb, var(--muted) 10%, transparent); }
 .status-dot.active { background: var(--accent); box-shadow: 0 0 0 5px var(--accent-soft), 0 0 18px var(--accent); }
 .status-dot.offline { background: var(--danger); }
-.speed-reading { display: flex; justify-content: center; align-items: flex-end; gap: 16px; margin: 16px 0 6px; }
+.speed-reading { display: flex; justify-content: center; align-items: flex-end; gap: 16px; margin: 16px 0 18px; }
 .speed-reading > span { font-family: Georgia, "Times New Roman", serif; font-size: clamp(5rem, 14vw, 10rem); line-height: .85; letter-spacing: -.07em; }
-.speed-reading div { display: flex; flex-direction: column; align-items: flex-start; padding-bottom: 13px; }
+.speed-reading div { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding-bottom: 4px; }
 .speed-reading strong { color: var(--accent); font-size: 20px; }.speed-reading small { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .12em; }
 .speed-panel > p { color: var(--muted); font-size: 12px; }
 .meter { max-width: 680px; height: 3px; margin: 28px auto 0; overflow: hidden; background: var(--line); border-radius: 4px; }
@@ -140,3 +140,24 @@ footer { display: flex; justify-content: center; gap: 10px; padding: 25px 0 40px
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
+
+.countdown {
+  margin: 0.5rem 0 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.best-site {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.history-sites { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.history-sites .site-low { color: var(--danger, #ff6b6b); font-weight: 600; }
+.history-row { row-gap: 8px; }
+
+.site-list { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 0 0 12px; }
+.site-chip { padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.site-chip.testing { color: var(--accent); border-color: var(--accent); }
+.site-chip.site-low { color: var(--danger, #ff6b6b); border-color: currentColor; }

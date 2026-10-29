@@ -4,7 +4,9 @@ Signal Watch is a lightweight, browser-based internet download speed monitor. It
 
 ## Features
 
-- Download-speed checks from the device running the browser
+- Download-speed checks from the device running the browser, testing 3 sites (Cloudflare, CacheFly, Wikimedia) with 4 parallel connections each and reporting the median
+- Every site's speed is saved per check, and a site far below the median is flagged in red
+- Live countdown to the next check
 - Two-minute default interval with custom seconds or minutes
 - Completed-test count plus current, lowest, average, and highest speeds
 - Offline-event counter
@@ -16,9 +18,9 @@ Signal Watch is a lightweight, browser-based internet download speed monitor. It
 
 ## How the measurement works
 
-The JavaScript runs in the visitor's browser and downloads a temporary 10 MB test payload from Cloudflare's speed-test endpoint. This means a Vercel-hosted copy measures the visitor's network path, not Vercel's server connection.
+The JavaScript runs in the visitor's browser and downloads from each of three test sites in turn (Cloudflare, CacheFly, Wikimedia) over 4 parallel connections of up to 5 MB each, and records the median of the sites as that check's speed. This means a Vercel-hosted copy measures the visitor's network path, not Vercel's server connection.
 
-Results are saved only in the current browser's local storage so a session can continue after a refresh or browser restart. They are never uploaded by this app. Use **Start fresh** to permanently clear the saved session. Each completed check uses approximately 10 MB of data, so short intervals can consume significant bandwidth.
+Results are saved only in the current browser's local storage so a session can continue after a refresh or browser restart. They are never uploaded by this app. Use **Start fresh** to permanently clear the saved session. Each completed check uses up to about 60 MB of data, so short intervals can consume significant bandwidth.
 
 Browser scheduling may slow or pause checks when the tab is in the background, the device sleeps, or the operating system enables power saving.
 
@@ -83,7 +85,7 @@ The root files are sufficient for local use and Vercel. The `dist` directory is 
 The main test settings are at the top of `app.js`:
 
 ```js
-const TEST_URL = "https://speed.cloudflare.com/__down";
+const TEST_SITES = [ /* name + url() for each site */ ];
 const TEST_BYTES = 10_000_000;
 const TEST_TIMEOUT_MS = 30_000;
 ```
