@@ -27,10 +27,15 @@ const elements = {
   siteList: document.querySelector("#siteList"),
   currentSite: document.querySelector("#currentSite"),
   testCount: document.querySelector("#testCount"),
+  testCountTime: document.querySelector("#testCountTime"),
   offlineCount: document.querySelector("#offlineCount"),
+  offlineCountTime: document.querySelector("#offlineCountTime"),
   lowestSpeed: document.querySelector("#lowestSpeed"),
+  lowestSpeedTime: document.querySelector("#lowestSpeedTime"),
   averageSpeed: document.querySelector("#averageSpeed"),
+  averageSpeedTime: document.querySelector("#averageSpeedTime"),
   highestSpeed: document.querySelector("#highestSpeed"),
+  highestSpeedTime: document.querySelector("#highestSpeedTime"),
   checkCount: document.querySelector("#checkCount"),
   historyEmpty: document.querySelector("#historyEmpty"),
   historyList: document.querySelector("#historyList"),
@@ -46,13 +51,13 @@ let timerId = null;
 let countdownId = null;
 let nextCheckAt = 0;
 let activeController = null;
-let offlineEvents = 0;
+let offlineLog = [];
 let results = [];
 
 function saveSession() {
   const session = {
     monitoring,
-    offlineEvents,
+    offlineLog: offlineLog.map(date => date.toISOString()),
     intervalValue: elements.intervalValue.value,
     intervalUnit: elements.intervalUnit.value,
     results: results.map(result => ({ speed: result.speed, sites: result.sites, date: result.date.toISOString() }))
@@ -72,16 +77,22 @@ function getSavedSession() {
 }
 
 function restoreSession(session) {
-  offlineEvents = Number.isFinite(session.offlineEvents) ? session.offlineEvents : 0;
+  offlineLog = Array.isArray(session.offlineLog)
+    ? session.offlineLog.filter(date => !Number.isNaN(Date.parse(date))).map(date => new Date(date))
+    : [];
   results = session.results
     .filter(result => Number.isFinite(result.speed) && !Number.isNaN(Date.parse(result.date)))
     .map(result => ({ speed: result.speed, sites: Array.isArray(result.sites) ? result.sites : undefined, date: new Date(result.date) }));
   elements.intervalValue.value = session.intervalValue || "2";
   elements.intervalUnit.value = session.intervalUnit === "seconds" ? "seconds" : "minutes";
   elements.historyList.replaceChildren();
-  elements.historyEmpty.hidden = results.length > 0;
-  results.forEach(addHistory);
-  updateStatistics();
+  elements.historyEmpty.hidden = results.length > 0 || offlineLog.length > 0;
+  const timeline = [
+    ...results.map(result => ({ date: result.date, entry: () => addHistory(result) })),
+    ...offlineLog.map(date => ({ date, entry: () => addOfflineHistory(date) }))
+  ].sort((a, b) => a.date - b.date);
+  timeline.forEach(item => item.entry());
+  updateStatistics(timeline.at(-1)?.date ?? new Date());
 
   const latest = results.at(-1);
   if (latest) {
@@ -100,7 +111,7 @@ function clearSession() {
   stopCountdown();
   activeController?.abort();
   activeController = null;
-  offlineEvents = 0;
+  offlineLog = [];
   results = [];
   localStorage.removeItem(SESSION_STORAGE_KEY);
   elements.historyList.replaceChildren();
@@ -150,16 +161,35 @@ function formatSpeed(value) {
   return value.toFixed(2);
 }
 
-function updateStatistics() {
+function formatTime(date) {
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+}
+
+function updateStatistics(asOf = new Date()) {
   elements.testCount.textContent = String(results.length);
-  elements.offlineCount.textContent = String(offlineEvents);
+  elements.offlineCount.textContent = String(offlineLog.length);
   elements.checkCount.textContent = `${results.length} ${results.length === 1 ? "check" : "checks"}`;
-  if (!results.length) return;
+
+  const activityLabel = results.length || offlineLog.length ? `as of ${formatTime(asOf)}` : "";
+  elements.testCountTime.textContent = activityLabel;
+  elements.offlineCountTime.textContent = activityLabel;
+
+  if (!results.length) {
+    elements.lowestSpeedTime.textContent = "";
+    elements.averageSpeedTime.textContent = "";
+    elements.highestSpeedTime.textContent = "";
+    return;
+  }
 
   const speeds = results.map(item => item.speed);
   elements.lowestSpeed.textContent = formatSpeed(Math.min(...speeds));
   elements.highestSpeed.textContent = formatSpeed(Math.max(...speeds));
   elements.averageSpeed.textContent = formatSpeed(speeds.reduce((sum, speed) => sum + speed, 0) / speeds.length);
+
+  const speedLabel = `as of ${formatTime(results.at(-1).date)}`;
+  elements.lowestSpeedTime.textContent = speedLabel;
+  elements.averageSpeedTime.textContent = speedLabel;
+  elements.highestSpeedTime.textContent = speedLabel;
 }
 
 function addHistory(result) {
@@ -185,11 +215,24 @@ function addHistory(result) {
   elements.historyList.prepend(row);
 }
 
+function addOfflineHistory(date, message = "Offline") {
+  elements.historyEmpty.hidden = true;
+  const row = document.createElement("div");
+  row.className = "history-row history-row-offline";
+  row.innerHTML = `
+    <time datetime="${date.toISOString()}">${formatTime(date)}</time>
+    <div class="history-bar history-bar-offline"><span style="width:100%"></span></div>
+    <strong class="history-offline-label">${message}</strong>`;
+  elements.historyList.prepend(row);
+}
+
 function recordOffline(message = "Connection unavailable") {
-  offlineEvents += 1;
-  updateStatistics();
+  const date = new Date();
+  offlineLog.push(date);
+  addOfflineHistory(date, message);
+  updateStatistics(date);
   setStatus(message, "offline");
-  elements.lastChecked.textContent = `Failed check at ${new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}`;
+  elements.lastChecked.textContent = `Failed check at ${formatTime(date)}`;
   saveSession();
 }
 
@@ -329,7 +372,7 @@ async function runCheck() {
     elements.meterFill.style.width = `${Math.min(100, Math.max(1, speed / 5))}%`;
     setStatus("Monitoring active", "active");
     addHistory(result);
-    updateStatistics();
+    updateStatistics(result.date);
     saveSession();
   } catch (error) {
     if (monitoring && error.name !== "AbortError") recordOffline("Speed check failed");
@@ -372,7 +415,7 @@ function stopMonitoring() {
 }
 
 function startFresh() {
-  const hasSession = results.length > 0 || offlineEvents > 0;
+  const hasSession = results.length > 0 || offlineLog.length > 0;
   if (hasSession && !window.confirm("Clear the saved session and start fresh?")) return;
   clearSession();
   elements.sessionDialog.hidden = true;
@@ -381,10 +424,11 @@ function startFresh() {
 
 function initializeSession() {
   const session = getSavedSession();
-  if (!session || (!session.results.length && !session.offlineEvents)) return;
+  const hasOfflineLog = Array.isArray(session?.offlineLog) && session.offlineLog.length > 0;
+  if (!session || (!session.results.length && !hasOfflineLog)) return;
   restoreSession(session);
-  const lastCheck = results.at(-1)?.date;
-  elements.sessionDialogSummary.textContent = `${results.length} ${results.length === 1 ? "check" : "checks"} and ${offlineEvents} offline ${offlineEvents === 1 ? "event" : "events"} saved${lastCheck ? `, last updated ${lastCheck.toLocaleString()}` : ""}.`;
+  const lastActivity = [...results.map(result => result.date), ...offlineLog].sort((a, b) => b - a)[0];
+  elements.sessionDialogSummary.textContent = `${results.length} ${results.length === 1 ? "check" : "checks"} and ${offlineLog.length} offline ${offlineLog.length === 1 ? "event" : "events"} saved${lastActivity ? `, last updated ${lastActivity.toLocaleString()}` : ""}.`;
   elements.sessionDialog.hidden = false;
   elements.continueButton.focus();
 }
